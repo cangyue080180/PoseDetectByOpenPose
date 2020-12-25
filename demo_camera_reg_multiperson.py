@@ -5,11 +5,14 @@ import numpy as np
 import torch
 from glob import glob
 from align import AlignPoints
+from clientdemo import Conf, HttpHelper
+from clientdemo.DataModel import PoseStatus, DetailPoseInfo, PoseInfo
 from src import model
 from src import util
 from src.body import Body
 import torch.nn as nn
 import time
+import threading
 
 
 class NeuralNet(nn.Module):
@@ -51,56 +54,220 @@ def reg_infer(pos):
     return classidx
 
 
-model = NeuralNet(18 * 3).cuda()
-model.load_state_dict(torch.load('./49_model.ckpt'))
-body_estimation = Body('model/body_pose_model.pth')
-aligner = AlignPoints()
+def aged_status_reset(aged):
+    aged.timesit = 0
+    aged.timelie = 0
+    aged.timestand = 0
+    aged.timedown = 0
+    aged.timeother = 0
+    aged.timein = None
+
+
+def aged_status_sync(aged):
+    '''
+    读取数据库中该用户的数据记录赋值为初始值
+    :param aged: PoseInfo对象实例
+    :return: None
+    '''
+    # 拼接url，参考接口文档
+    aged_today_status__url = Conf.Urls.PoseInfoUrl + "/" + str(aged.agesinfoid)
+    print(f'get {aged_today_status__url}')
+
+    try:
+        aged_status_today = HttpHelper.get_items(aged_today_status__url)
+    except Exception:  # 还没有数据记录
+        return
+    aged.timesit = aged_status_today.timeSit
+    aged.timelie = aged_status_today.timeLie
+    aged.timestand = aged_status_today.timeStand
+    aged.timedown = aged_status_today.timeDown
+    aged.timeother = aged_status_today.timeOther
+
+
+def pose_detect_with_video(aged_id,classidx,human_box,parse_pose_demo_instance):
+    use_aged = ages[aged_id]
+    # detect if new day
+    now_date = time.strftime('%Y-%m-%dT00:00:00', time.localtime())
+    if not now_date == use_aged.date:  # a new day
+        aged_status_reset(use_aged)
+        parse_pose_demo_instance.is_first_frame = True
+        use_aged.date = now_date
+
+    if parse_pose_demo_instance.is_first_frame:  # 第一帧，开始计时
+        # 从服务器获取当天的状态记录信息，进行本地值的更新，防止状态计时被重置
+        aged_status_sync(use_aged)
+        parse_pose_demo_instance.is_first_frame = False
+    else:
+        last_pose_time = time.time() - parse_pose_demo_instance.last_time  # 上一个状态至今的时间差，单位为s
+        if use_aged.status == PoseStatus.Sit.value:
+            use_aged.timesit += last_pose_time
+        elif use_aged.status == PoseStatus.Down.value:
+            use_aged.timedown += last_pose_time
+        elif use_aged.status == PoseStatus.Lie.value:
+            use_aged.timelie += last_pose_time
+        elif use_aged.status == PoseStatus.Stand.value:
+            use_aged.timestand += last_pose_time
+        else:
+            use_aged.timeother += last_pose_time
+
+    parse_pose_demo_instance.last_time = time.time()
+
+    if classidx == 0:
+        now_status = PoseStatus.Sit.value
+    elif classidx == 1:
+        now_status = PoseStatus.Lie.value
+    elif classidx == 2:
+        now_status = PoseStatus.Stand.value
+    elif classidx == 3:
+        now_status = PoseStatus.Lie.value
+    else:
+        now_status = PoseStatus.Other.value
+
+    now_date_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+    if not now_status == use_aged.status:  # 新的行为发生
+        if not now_date_time == use_aged.datetime:  # 根据实际情况，每秒只记录一次状态更改操作
+            temp_detail_pose_info = DetailPoseInfo(agesInfoId=aged_id, dateTime=now_date_time, status=now_status)
+            # 写数据记录到数据库表DetaiPoseInfo
+            detail_pose_url = Conf.Urls.DetailPoseInfoUrl
+            http_result = HttpHelper.create_item(detail_pose_url, temp_detail_pose_info)
+    use_aged.datetime = now_date_time
+
+    if parse_pose_demo_instance.camera_info.isUseSafeRegion:
+        is_outer_chuang = False
+        #  因为床的矩形坐标是在原图压缩1/2之后的值，所以下面的值也需要压缩1/2
+        xmin, ymin, xmax, ymax = int(human_box[0] / 2), int(human_box[1] / 2), int(human_box[2] / 2), int(
+            human_box[3] / 2)
+        if xmin > parse_pose_demo_instance.camera_info.rightBottomPointX \
+                or ymin > parse_pose_demo_instance.camera_info.rightBottomPointY \
+                or xmax < parse_pose_demo_instance.camera_info.leftTopPointX \
+                or ymax < parse_pose_demo_instance.camera_info.leftTopPointY:
+            is_outer_chuang = True
+
+        use_aged.isalarm = False
+        # 判断当前状态是否需求报警
+        if is_outer_chuang:
+            if now_status == PoseStatus.Lie.value:
+                use_aged.isalarm = True
+                now_status = PoseStatus.Down.value
+    else:
+        if now_status == PoseStatus.Down.value:  # TODO：这里的给值是不对的，需要赋予识别服务的对应的需要报警的状态值
+            use_aged.isalarm = True
+
+    use_aged.status = now_status
+
+
+class ParsePoseCore:
+    def __init__(self, camera, pose_model, use_body_estimation, tcp_client):
+        self.camera = camera
+        self.pose_model = pose_model
+        self.use_body_estimation = use_body_estimation
+        self.tcp_client = tcp_client
+        self.is_stop = True
+        self.stream = None
+        self.is_first_frame = False
+
+    def start(self):
+        self.is_stop = False
+        self.stream = cv2.VideoCapture(self.camera.videoAddress)
+        t = threading.Thread(target=self.parse, args=())
+        t.daemon = True
+        t.start()
+
+    def stop(self):
+        self.is_stop = True
+
+    def parse(self):
+        while not self.is_stop:
+            (grabbed, frame) = self.stream.read()
+            # if the `grabbed` boolean is `False`, then we have
+            # reached the end of the video file or we disconnect
+
+            if not grabbed:
+                oriImg = frame
+                corrs, subset = self.use_body_estimation(oriImg)
+                subset_vis = subset.copy()
+                oriImg = util.draw_bodypose(oriImg, corrs, subset_vis)
+                #  TODO send img to client for showing it
+                corrs = prepare_posreg_multiperson(corrs, subset)
+                preds = reg_infer(corrs)
+                preds = preds.cpu().numpy()
+
+                for aged in enumerate(self.camera.roomInfo.agesInfos):
+                    if not aged.id in ages.keys():
+                        ages[aged.id] = PoseInfo(agesInfoId=aged.id,
+                                                         date=time.strftime('%Y-%m-%dT00:00:00', time.localtime()),
+                                                         dateTime=time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()),
+                                                         timeStand=0,
+                                                         timeSit=0,
+                                                         timeLie=0,
+                                                         timeDown=0,
+                                                         timeOther=0)
+                for i in range(corrs.shape[0]):
+                    xmin, ymin = np.min(corrs[i, :, 0]), np.min(corrs[i, :, 1])
+            else:
+                #  reconnect the video stream
+                self.stream = cv2.VideoCapture(self.camera.videoAddress)
+
+        self.stream.release()
+
+
+ages = {}  # 老人字典
+cameras = {}  # 摄像头字典
+# 获取或设置本机IP地址信息
+local_ip = '192.168.1.60'
 
 print(f"Torch device: {torch.cuda.get_device_name()}")
 
-# cap = cv2.VideoCapture(0)
-cap = cv2.VideoCapture('')
-# cap.set(3, 400)
-# cap.set(4, 300)
-j = 0
+if __name__=="__main__":
+    model = NeuralNet(18 * 3).cuda()
+    model.load_state_dict(torch.load('./49_model.ckpt'))
+    body_estimation = Body('model/body_pose_model.pth')
+    aligner = AlignPoints()
+    pass
 
-ims_path = '.\\test_data\\test'
-ims_path_lst = glob(ims_path + '\\*.jpg')
-# while True:
-for im_path in ims_path_lst:
-    j += 1
-    try:
-        oriImg = cv2.imread(im_path)
-        st = time.time()
-        # oriImg = cv2.resize(oriImg,(240,120),interpolation=cv2.INTER_CUBIC)
-        corrs, subset = body_estimation(oriImg)
-        subset_vis = subset.copy()
-        oriImg = util.draw_bodypose(oriImg, corrs, subset_vis)
-        corrs = prepare_posreg_multiperson(corrs, subset)
-        preds = reg_infer(corrs)
-        preds = preds.cpu().numpy()
-
-        for i in range(corrs.shape[0]):
-            xmin, ymin = np.min(corrs[i, :, 0]), np.min(corrs[i, :, 1])
-            if preds[i] == 0:
-                cv2.putText(oriImg, 'zuo', (int(xmin - 10), int(ymin - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.7,
-                            [255, 0, 255], 1)
-            if preds[i] == 1:
-                cv2.putText(oriImg, 'tang', (int(xmin - 10), int(ymin - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.7,
-                            [255, 0, 255], 1)
-            if preds[i] == 2:
-                cv2.putText(oriImg, 'zhan', (int(xmin - 10), int(ymin - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.7,
-                            [255, 0, 255], 1)
-            if preds[i] == 3:
-                cv2.putText(oriImg, 'zuo_di', (int(xmin - 10), int(ymin - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.7,
-                            [255, 0, 255], 1)
-            # print(i, preds)
-            # print(time.time()-st)
-        cv2.imwrite('.\\test_data\\re\\' + str(j).zfill(4) + '.jpg', oriImg)
-        # cv2.imshow('demo', oriImg)
-        # cv2.waitKey()
-    except:
-        continue
-
-cap.release()
-cv2.destroyAllWindows()
+# # cap = cv2.VideoCapture(0)
+# cap = cv2.VideoCapture('')
+# # cap.set(3, 400)
+# # cap.set(4, 300)
+# j = 0
+#
+# ims_path = '.\\test_data\\test'
+# ims_path_lst = glob(ims_path + '\\*.jpg')
+# # while True:
+# for im_path in ims_path_lst:
+#     j += 1
+#     try:
+#         oriImg = cv2.imread(im_path)
+#         st = time.time()
+#         # oriImg = cv2.resize(oriImg,(240,120),interpolation=cv2.INTER_CUBIC)
+#         corrs, subset = body_estimation(oriImg)
+#         subset_vis = subset.copy()
+#         oriImg = util.draw_bodypose(oriImg, corrs, subset_vis)
+#         corrs = prepare_posreg_multiperson(corrs, subset)
+#         preds = reg_infer(corrs)
+#         preds = preds.cpu().numpy()
+#
+#         for i in range(corrs.shape[0]):
+#             xmin, ymin = np.min(corrs[i, :, 0]), np.min(corrs[i, :, 1])
+#             if preds[i] == 0:
+#                 cv2.putText(oriImg, 'zuo', (int(xmin - 10), int(ymin - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.7,
+#                             [255, 0, 255], 1)
+#             if preds[i] == 1:
+#                 cv2.putText(oriImg, 'tang', (int(xmin - 10), int(ymin - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.7,
+#                             [255, 0, 255], 1)
+#             if preds[i] == 2:
+#                 cv2.putText(oriImg, 'zhan', (int(xmin - 10), int(ymin - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.7,
+#                             [255, 0, 255], 1)
+#             if preds[i] == 3:
+#                 cv2.putText(oriImg, 'zuo_di', (int(xmin - 10), int(ymin - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.7,
+#                             [255, 0, 255], 1)
+#             # print(i, preds)
+#             # print(time.time()-st)
+#         cv2.imwrite('.\\test_data\\re\\' + str(j).zfill(4) + '.jpg', oriImg)
+#         # cv2.imshow('demo', oriImg)
+#         # cv2.waitKey()
+#     except:
+#         continue
+#
+# cap.release()
+# cv2.destroyAllWindows()
