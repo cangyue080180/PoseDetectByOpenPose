@@ -1,9 +1,13 @@
+import sched
+
 import cv2
 import matplotlib.pyplot as plt
 import copy
 import numpy as np
 import torch
 from glob import glob
+
+import tcpClient
 from align import AlignPoints
 from clientdemo import Conf, HttpHelper
 from clientdemo.DataModel import PoseStatus, DetailPoseInfo, PoseInfo
@@ -133,10 +137,10 @@ def pose_detect_with_video(aged_id,classidx,human_box,parse_pose_demo_instance):
     use_aged.datetime = now_date_time
 
     if parse_pose_demo_instance.camera_info.isUseSafeRegion:
-        is_outer_chuang = False
+        is_outer_chuang = False  # 临时变量，指示是否在安全区外
         #  因为床的矩形坐标是在原图压缩1/2之后的值，所以下面的值也需要压缩1/2
-        xmin, ymin, xmax, ymax = int(human_box[0] / 2), int(human_box[1] / 2), int(human_box[2] / 2), int(
-            human_box[3] / 2)
+        xmin, ymin, xmax, ymax = int(human_box[0] ), int(human_box[1] ), int(human_box[2] ), int(
+            human_box[3] )
         if xmin > parse_pose_demo_instance.camera_info.rightBottomPointX \
                 or ymin > parse_pose_demo_instance.camera_info.rightBottomPointY \
                 or xmax < parse_pose_demo_instance.camera_info.leftTopPointX \
@@ -183,27 +187,28 @@ class ParsePoseCore:
             # reached the end of the video file or we disconnect
 
             if not grabbed:
-                oriImg = frame
+                h,w,c = frame.shape
+                oriImg = cv2.resize(frame, (int(w / 2), int(h / 2)), interpolation=cv2.INTER_CUBIC)
                 corrs, subset = self.use_body_estimation(oriImg)
                 subset_vis = subset.copy()
                 oriImg = util.draw_bodypose(oriImg, corrs, subset_vis)
-                #  TODO send img to client for showing it
-                corrs = prepare_posreg_multiperson(corrs, subset)
-                preds = reg_infer(corrs)
-                preds = preds.cpu().numpy()
+                self.tcp_client.send_img(oriImg)
+                # corrs = prepare_posreg_multiperson(corrs, subset)
+                # preds = reg_infer(corrs)
+                # preds = preds.cpu().numpy()
 
-                for aged in enumerate(self.camera.roomInfo.agesInfos):
-                    if not aged.id in ages.keys():
-                        ages[aged.id] = PoseInfo(agesInfoId=aged.id,
-                                                         date=time.strftime('%Y-%m-%dT00:00:00', time.localtime()),
-                                                         dateTime=time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()),
-                                                         timeStand=0,
-                                                         timeSit=0,
-                                                         timeLie=0,
-                                                         timeDown=0,
-                                                         timeOther=0)
-                for i in range(corrs.shape[0]):
-                    xmin, ymin = np.min(corrs[i, :, 0]), np.min(corrs[i, :, 1])
+                # for aged in enumerate(self.camera.roomInfo.agesInfos):
+                #     if not aged.id in ages.keys():
+                #         ages[aged.id] = PoseInfo(agesInfoId=aged.id,
+                #                                          date=time.strftime('%Y-%m-%dT00:00:00', time.localtime()),
+                #                                          dateTime=time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()),
+                #                                          timeStand=0,
+                #                                          timeSit=0,
+                #                                          timeLie=0,
+                #                                          timeDown=0,
+                #                                          timeOther=0)
+                # for i in range(corrs.shape[0]):
+                #     xmin, ymin = np.min(corrs[i, :, 0]), np.min(corrs[i, :, 1])
             else:
                 #  reconnect the video stream
                 self.stream = cv2.VideoCapture(self.camera.videoAddress)
@@ -211,10 +216,35 @@ class ParsePoseCore:
         self.stream.release()
 
 
+def write_database():
+    """
+    每1秒更新一次数据库表PoseInfo的记录信息
+    :return:
+    """
+    pose_url = Conf.Urls.PoseInfoUrl + '/UpdateOrCreatePoseInfo'
+
+    for aged in ages.values():
+        temp_pose_info = PoseInfo(agesInfoId=aged.agesinfoid,
+                                  date=aged.date,
+                                  dateTime=aged.datetime,
+                                  timeStand=int(float(aged.timestand)),
+                                  timeSit=int(float(aged.timesit)),
+                                  timeLie=int(float(aged.timelie)),
+                                  timeDown=int(float(aged.timedown)),
+                                  timeOther=int(float(aged.timeother)),
+                                  isAlarm=aged.isalarm,
+                                  status=aged.status
+                                  )
+        http_result = HttpHelper.create_item(pose_url, temp_pose_info)
+    scheduler.enter(1, 0, write_database, ())
+
+
 ages = {}  # 老人字典
 cameras = {}  # 摄像头字典
 # 获取或设置本机IP地址信息
 local_ip = '192.168.1.60'
+tcp_server_ip = '127.0.0.1'
+tcp_server_port = 8008
 
 print(f"Torch device: {torch.cuda.get_device_name()}")
 
@@ -223,7 +253,23 @@ if __name__=="__main__":
     model.load_state_dict(torch.load('./49_model.ckpt'))
     body_estimation = Body('model/body_pose_model.pth')
     aligner = AlignPoints()
-    pass
+
+    current_server_url = Conf.Urls.ServerInfoUrl + "/GetServerInfo?ip=" + local_ip
+    print(f'get {current_server_url}')
+
+    current_server =HttpHelper.get_items(current_server_url)
+    print(f'current_server.camera_count: {len(current_server.cameraInfos)}')
+
+    # 定时调度来更新数据库
+    scheduler = sched.scheduler(time.time, time.sleep)
+    scheduler.enter(1, 0, write_database, ())
+
+    for camera in current_server.cameraInfos:  # 遍历本服务器需要处理的摄像头
+        temp_tcp_client = tcpClient.TcpClient(tcp_server_ip, tcp_server_port, camera.id, camera.roomInfoId)
+        temp_tcp_client.start()
+
+        temp_ai_instance = ParsePoseCore(camera,model,body_estimation,temp_tcp_client)
+        temp_ai_instance.start()
 
 # # cap = cv2.VideoCapture(0)
 # cap = cv2.VideoCapture('')
