@@ -207,7 +207,7 @@ class ParsePoseCore:
                     subset_vis = subset.copy()
                     oriImg = util.draw_bodypose(oriImg, corrs, subset_vis)
                     if self.tcp_client.is_room_video_send:
-                        oriImg = cv2.resize(frame, (int(w / 2), int(h / 2)), interpolation=cv2.INTER_CUBIC)
+                        #oriImg = cv2.resize(frame, (int(w / 2), int(h / 2)), interpolation=cv2.INTER_CUBIC)
                         self.tcp_client.send_img(oriImg)
                         print(f'{get_time_now()} send img')
                     corrs = prepare_posreg_multiperson(corrs, subset)
