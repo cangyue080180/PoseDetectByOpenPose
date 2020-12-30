@@ -178,6 +178,7 @@ class ParsePoseCore:
     def start(self):
         self.is_stop = False
         self.stream = cv2.VideoCapture(self.camera.videoAddress)
+        print(f'videoAddress {self.camera.videoAddress}')
         t = threading.Thread(target=self.parse, args=())
         t.daemon = True
         t.start()
@@ -186,12 +187,19 @@ class ParsePoseCore:
         self.is_stop = True
 
     def parse(self):
+        frame_num = 0
         while not self.is_stop:
             (grabbed, frame) = self.stream.read()
             # if the `grabbed` boolean is `False`, then we have
             # reached the end of the video file or we disconnect
 
-            if not grabbed:
+            if grabbed:
+                #  because it is so slow to detect, so detect once each 20 frames
+                if frame_num<20:
+                    frame_num += 1
+                    return
+                else:
+                    frame_num=0
                 h,w,c = frame.shape
                 oriImg = cv2.resize(frame, (int(w / 2), int(h / 2)), interpolation=cv2.INTER_CUBIC)
                 corrs, subset = self.use_body_estimation(oriImg)
