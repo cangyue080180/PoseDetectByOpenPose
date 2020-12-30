@@ -173,7 +173,8 @@ class ParsePoseCore:
         self.tcp_client = tcp_client
         self.is_stop = True
         self.stream = None
-        self.is_first_frame = False
+        self.is_first_frame = True
+        self.last_time = 0
 
     def start(self):
         self.is_stop = False
