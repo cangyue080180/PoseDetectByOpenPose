@@ -147,9 +147,9 @@ def pose_detect_with_video(aged_id,classidx,human_box,parse_pose_demo_instance):
         xmin, ymin, xmax, ymax = int(human_box[0] ), int(human_box[1] ), int(human_box[2] ), int(
             human_box[3] )
         if xmin > parse_pose_demo_instance.camera.rightBottomPointX \
-                or ymin > parse_pose_demo_instance.camera_info.rightBottomPointY \
-                or xmax < parse_pose_demo_instance.camera_info.leftTopPointX \
-                or ymax < parse_pose_demo_instance.camera_info.leftTopPointY:
+                or ymin > parse_pose_demo_instance.camera.rightBottomPointY \
+                or xmax < parse_pose_demo_instance.camera.leftTopPointX \
+                or ymax < parse_pose_demo_instance.camera.leftTopPointY:
             is_outer_chuang = True
 
         use_aged.isalarm = False
