@@ -141,12 +141,12 @@ def pose_detect_with_video(aged_id,classidx,human_box,parse_pose_demo_instance):
             http_result = HttpHelper.create_item(detail_pose_url, temp_detail_pose_info)
     use_aged.datetime = now_date_time
 
-    if parse_pose_demo_instance.camera_info.isUseSafeRegion:
+    if parse_pose_demo_instance.camera.isUseSafeRegion:
         is_outer_chuang = False  # 临时变量，指示是否在安全区外
         #  因为床的矩形坐标是在原图压缩1/2之后的值，所以下面的值也需要压缩1/2
         xmin, ymin, xmax, ymax = int(human_box[0] ), int(human_box[1] ), int(human_box[2] ), int(
             human_box[3] )
-        if xmin > parse_pose_demo_instance.camera_info.rightBottomPointX \
+        if xmin > parse_pose_demo_instance.camera.rightBottomPointX \
                 or ymin > parse_pose_demo_instance.camera_info.rightBottomPointY \
                 or xmax < parse_pose_demo_instance.camera_info.leftTopPointX \
                 or ymax < parse_pose_demo_instance.camera_info.leftTopPointY:
