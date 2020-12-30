@@ -223,19 +223,19 @@ def write_database():
     """
     pose_url = Conf.Urls.PoseInfoUrl + '/UpdateOrCreatePoseInfo'
 
-    for aged in ages.values():
-        temp_pose_info = PoseInfo(agesInfoId=aged.agesinfoid,
-                                  date=aged.date,
-                                  dateTime=aged.datetime,
-                                  timeStand=int(float(aged.timestand)),
-                                  timeSit=int(float(aged.timesit)),
-                                  timeLie=int(float(aged.timelie)),
-                                  timeDown=int(float(aged.timedown)),
-                                  timeOther=int(float(aged.timeother)),
-                                  isAlarm=aged.isalarm,
-                                  status=aged.status
-                                  )
-        http_result = HttpHelper.create_item(pose_url, temp_pose_info)
+    # for aged in ages.values():
+    #     temp_pose_info = PoseInfo(agesInfoId=aged.agesinfoid,
+    #                               date=aged.date,
+    #                               dateTime=aged.datetime,
+    #                               timeStand=int(float(aged.timestand)),
+    #                               timeSit=int(float(aged.timesit)),
+    #                               timeLie=int(float(aged.timelie)),
+    #                               timeDown=int(float(aged.timedown)),
+    #                               timeOther=int(float(aged.timeother)),
+    #                               isAlarm=aged.isalarm,
+    #                               status=aged.status
+    #                               )
+    #     http_result = HttpHelper.create_item(pose_url, temp_pose_info)
     scheduler.enter(1, 0, write_database, ())
 
 
@@ -270,6 +270,8 @@ if __name__=="__main__":
 
         temp_ai_instance = ParsePoseCore(camera,model,body_estimation,temp_tcp_client)
         temp_ai_instance.start()
+
+    scheduler.run()
 
 # # cap = cv2.VideoCapture(0)
 # cap = cv2.VideoCapture('')
