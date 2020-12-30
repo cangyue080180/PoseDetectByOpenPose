@@ -197,8 +197,9 @@ class ParsePoseCore:
                 corrs, subset = self.use_body_estimation(oriImg)
                 subset_vis = subset.copy()
                 oriImg = util.draw_bodypose(oriImg, corrs, subset_vis)
-                self.tcp_client.send_img(oriImg)
-                print(f'{get_time_now()} send img')
+                if self.tcp_client.is_room_video_send:
+                    self.tcp_client.send_img(oriImg)
+                    print(f'{get_time_now()} send img')
                 # corrs = prepare_posreg_multiperson(corrs, subset)
                 # preds = reg_infer(corrs)
                 # preds = preds.cpu().numpy()
