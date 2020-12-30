@@ -200,6 +200,7 @@ class ParsePoseCore:
                 else:
                     frame_num=0
                     h,w,c = frame.shape
+                    # 将原图片尺寸压缩，宽高都压缩到原来的1/2.
                     oriImg = cv2.resize(frame, (int(w / 2), int(h / 2)), interpolation=cv2.INTER_CUBIC)
                     corrs, subset = self.use_body_estimation(oriImg)
                     subset_vis = subset.copy()
@@ -211,18 +212,20 @@ class ParsePoseCore:
                     preds = reg_infer(corrs)
                     preds = preds.cpu().numpy()
 
-                    # for aged in enumerate(self.camera.roomInfo.agesInfos):
-                    #     if not aged.id in ages.keys():
-                    #         ages[aged.id] = PoseInfo(agesInfoId=aged.id,
-                    #                                          date=time.strftime('%Y-%m-%dT00:00:00', time.localtime()),
-                    #                                          dateTime=time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()),
-                    #                                          timeStand=0,
-                    #                                          timeSit=0,
-                    #                                          timeLie=0,
-                    #                                          timeDown=0,
-                    #                                          timeOther=0)
-                    # for i in range(corrs.shape[0]):
-                    #     xmin, ymin = np.min(corrs[i, :, 0]), np.min(corrs[i, :, 1])
+                    for aged in enumerate(self.camera.roomInfo.agesInfos):
+                        if not aged.id in ages.keys():
+                            ages[aged.id] = PoseInfo(agesInfoId=aged.id,
+                                                             date=time.strftime('%Y-%m-%dT00:00:00', time.localtime()),
+                                                             dateTime=time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()),
+                                                             timeStand=0,
+                                                             timeSit=0,
+                                                             timeLie=0,
+                                                             timeDown=0,
+                                                             timeOther=0)
+                    for i in range(corrs.shape[0]):
+                        print(f'i: {i}')
+                        xmin, ymin, xmax, ymax = np.min(corrs[i, :, 0]), np.min(corrs[i, :, 1]), np.max(corrs[i,:,0]), np.max(corrs[i,:,1])
+                        # pose_detect_with_video()
             else:
                 #  reconnect the video stream
                 self.stream = cv2.VideoCapture(self.camera.videoAddress)
@@ -238,19 +241,19 @@ def write_database():
     """
     pose_url = Conf.Urls.PoseInfoUrl + '/UpdateOrCreatePoseInfo'
 
-    # for aged in ages.values():
-    #     temp_pose_info = PoseInfo(agesInfoId=aged.agesinfoid,
-    #                               date=aged.date,
-    #                               dateTime=aged.datetime,
-    #                               timeStand=int(float(aged.timestand)),
-    #                               timeSit=int(float(aged.timesit)),
-    #                               timeLie=int(float(aged.timelie)),
-    #                               timeDown=int(float(aged.timedown)),
-    #                               timeOther=int(float(aged.timeother)),
-    #                               isAlarm=aged.isalarm,
-    #                               status=aged.status
-    #                               )
-    #     http_result = HttpHelper.create_item(pose_url, temp_pose_info)
+    for aged in ages.values():
+        temp_pose_info = PoseInfo(agesInfoId=aged.agesinfoid,
+                                  date=aged.date,
+                                  dateTime=aged.datetime,
+                                  timeStand=int(float(aged.timestand)),
+                                  timeSit=int(float(aged.timesit)),
+                                  timeLie=int(float(aged.timelie)),
+                                  timeDown=int(float(aged.timedown)),
+                                  timeOther=int(float(aged.timeother)),
+                                  isAlarm=aged.isalarm,
+                                  status=aged.status
+                                  )
+        http_result = HttpHelper.create_item(pose_url, temp_pose_info)
     scheduler.enter(1, 0, write_database, ())
 
 
