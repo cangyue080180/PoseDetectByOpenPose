@@ -17,6 +17,11 @@ from src.body import Body
 import torch.nn as nn
 import time
 import threading
+import datetime
+
+
+def get_time_now():
+    return datetime.datetime.now().strftime('%m-%d %H:%M:%S')
 
 
 class NeuralNet(nn.Module):
@@ -193,6 +198,7 @@ class ParsePoseCore:
                 subset_vis = subset.copy()
                 oriImg = util.draw_bodypose(oriImg, corrs, subset_vis)
                 self.tcp_client.send_img(oriImg)
+                print(f'{get_time_now()} send img')
                 # corrs = prepare_posreg_multiperson(corrs, subset)
                 # preds = reg_infer(corrs)
                 # preds = preds.cpu().numpy()
@@ -212,6 +218,7 @@ class ParsePoseCore:
             else:
                 #  reconnect the video stream
                 self.stream = cv2.VideoCapture(self.camera.videoAddress)
+                print(f'{get_time_now()} restart videoCapture')
 
         self.stream.release()
 
