@@ -204,29 +204,30 @@ class ParsePoseCore:
                     # 将原图片尺寸压缩，宽高都压缩到原来的1/2.
                     oriImg = cv2.resize(frame, (int(w / 2), int(h / 2)), interpolation=cv2.INTER_CUBIC)
                     corrs, subset = self.use_body_estimation(oriImg)
-                    subset_vis = subset.copy()
-                    oriImg = util.draw_bodypose(oriImg, corrs, subset_vis)
-                    if self.tcp_client.is_room_video_send:
-                        #oriImg = cv2.resize(frame, (int(w / 2), int(h / 2)), interpolation=cv2.INTER_CUBIC)
-                        self.tcp_client.send_img(oriImg)
-                        print(f'{get_time_now()} send img')
-                    corrs = prepare_posreg_multiperson(corrs, subset)
-                    preds = reg_infer(corrs)
-                    preds = preds.cpu().numpy()
+                    if corrs.any() or not subset.shape[0] ==0:
+                        subset_vis = subset.copy()
+                        oriImg = util.draw_bodypose(oriImg, corrs, subset_vis)
+                        if self.tcp_client.is_room_video_send:
+                            #oriImg = cv2.resize(frame, (int(w / 2), int(h / 2)), interpolation=cv2.INTER_CUBIC)
+                            self.tcp_client.send_img(oriImg)
+                            print(f'{get_time_now()} send img')
+                        corrs = prepare_posreg_multiperson(corrs, subset)
+                        preds = reg_infer(corrs)
+                        preds = preds.cpu().numpy()
 
-                    for aged in self.camera.roomInfo.agesInfos:
-                        if not aged.id in ages.keys():
-                            ages[aged.id] = PoseInfo(agesInfoId=aged.id,
-                                                             date=time.strftime('%Y-%m-%dT00:00:00', time.localtime()),
-                                                             dateTime=time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()),
-                                                             timeStand=0,
-                                                             timeSit=0,
-                                                             timeLie=0,
-                                                             timeDown=0,
-                                                             timeOther=0)
-                    for i in range(corrs.shape[0]):
-                        xmin, ymin, xmax, ymax = np.min(corrs[i, :, 0]), np.min(corrs[i, :, 1]), np.max(corrs[i,:,0]), np.max(corrs[i,:,1])
-                        pose_detect_with_video(self.camera.roomInfo.agesInfos[i].id,preds[i],(xmin,ymin,xmax,ymax),self)
+                        for aged in self.camera.roomInfo.agesInfos:
+                            if not aged.id in ages.keys():
+                                ages[aged.id] = PoseInfo(agesInfoId=aged.id,
+                                                                 date=time.strftime('%Y-%m-%dT00:00:00', time.localtime()),
+                                                                 dateTime=time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()),
+                                                                 timeStand=0,
+                                                                 timeSit=0,
+                                                                 timeLie=0,
+                                                                 timeDown=0,
+                                                                 timeOther=0)
+                        for i in range(corrs.shape[0]):
+                            xmin, ymin, xmax, ymax = np.min(corrs[i, :, 0]), np.min(corrs[i, :, 1]), np.max(corrs[i,:,0]), np.max(corrs[i,:,1])
+                            pose_detect_with_video(self.camera.roomInfo.agesInfos[i].id,preds[i],(xmin,ymin,xmax,ymax),self)
             else:
                 #  reconnect the video stream
                 self.stream = cv2.VideoCapture(self.camera.videoAddress)
