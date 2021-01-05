@@ -302,8 +302,8 @@ if __name__=="__main__":
 
         rooms[camera.roomInfoId] = RoomInfo(id=camera.roomInfo.id,
                                             name=camera.roomInfo.name,
-                                            isAlarm=camera.roomInfo.isalarm,
-                                            roomSize=camera.roomInfo.roomsize)
+                                            isAlarm=camera.roomInfo.isAlarm,
+                                            roomSize=camera.roomInfo.roomSize)
 
     scheduler.run()
 
