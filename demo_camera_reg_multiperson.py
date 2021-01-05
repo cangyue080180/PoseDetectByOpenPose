@@ -10,7 +10,7 @@ from glob import glob
 import tcpClient
 from align import AlignPoints
 from clientdemo import Conf, HttpHelper
-from clientdemo.DataModel import PoseStatus, DetailPoseInfo, PoseInfo
+from clientdemo.DataModel import PoseStatus, DetailPoseInfo, PoseInfo, RoomInfo
 from src import model
 from src import util
 from src.body import Body
@@ -153,10 +153,12 @@ def pose_detect_with_video(aged_id,classidx,human_box,parse_pose_demo_instance):
             is_outer_chuang = True
 
         use_aged.isalarm = False
+        rooms[parse_pose_demo_instance.camera.roomInfoId].isalarm = False
         # 判断当前状态是否需求报警
         if is_outer_chuang:
             if now_status == PoseStatus.Lie.value:
                 use_aged.isalarm = True
+                rooms[parse_pose_demo_instance.camera.roomInfoId].isalarm = True
                 now_status = PoseStatus.Down.value
     else:
         if now_status == PoseStatus.Down.value:  # TODO：这里的给值是不对的，需要赋予识别服务的对应的需要报警的状态值
@@ -256,10 +258,17 @@ def write_database():
                                   status=aged.status
                                   )
         http_result = HttpHelper.create_item(pose_url, temp_pose_info)
+
+    # 更新房间状态信息
+    room_url = Conf.Urls.RoomInfoUrl
+    for room in rooms.values():
+        HttpHelper.update_item(room_url, room.id, room)
+
     scheduler.enter(1, 0, write_database, ())
 
 
 ages = {}  # 老人字典
+rooms = {}  # 本服务器监控的房间字典
 cameras = {}  # 摄像头字典
 # 获取或设置本机IP地址信息
 local_ip = '192.168.1.60'
@@ -290,6 +299,11 @@ if __name__=="__main__":
 
         temp_ai_instance = ParsePoseCore(camera,model,body_estimation,temp_tcp_client)
         temp_ai_instance.start()
+
+        rooms[camera.roomInfoId] = RoomInfo(id=camera.roomInfo.id,
+                                            name=camera.roomInfo.name,
+                                            isAlarm=camera.roomInfo.isalarm,
+                                            roomSize=camera.roomInfo.roomsize)
 
     scheduler.run()
 

@@ -69,10 +69,11 @@ class PoseStatus(Enum):
 
 
 class RoomInfo:
-    def __init__(self, id, name, roomSize=0, agesInfos=None, cameraInfos=None):
+    def __init__(self, id, name, roomSize=0, isAlarm=False, agesInfos=None, cameraInfos=None):
         self.id = id
         self.name = name
         self.roomsize = roomSize
+        self.isalarm = isAlarm
         self.agesinfos = agesInfos
         self.camerainfos = cameraInfos
 
