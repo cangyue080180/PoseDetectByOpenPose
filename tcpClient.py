@@ -75,6 +75,8 @@ class TcpClient:
 
     def stop(self):
         self.is_stop = True
+        self.tcp_socket.send(struct.pack('<BIB', 4, 1, 2))
+        self.tcp_socket.close()
 
     def __receive(self):
         print(f'tcp_recv_thread: {threading.currentThread().name}')
@@ -93,6 +95,9 @@ class TcpClient:
                             self.is_room_video_send = False
                         print(f'{get_time_now()} is_video_send: {self.is_room_video_send}')
             except ConnectionError:
+                is_except = True
+                break
+            except Exception:
                 is_except = True
                 break
         # 尝试重连
