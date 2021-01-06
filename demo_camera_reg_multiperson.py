@@ -198,7 +198,7 @@ class ParsePoseCore:
 
             if grabbed:
                 #  because it is so slow to detect, so detect once each 20 frames
-                if frame_num<20:
+                if frame_num < 2:
                     frame_num += 1
                 else:
                     frame_num=0
@@ -264,16 +264,32 @@ def write_database():
     for room in rooms.values():
         HttpHelper.update_item(room_url, room.id, room)
 
-    scheduler.enter(1, 0, write_database, ())
+    if not is_stop:
+        scheduler.enter(1, 0, write_database, ())
+
+
+def wait_for_stop_cmd():
+    global is_stop
+    input("\n\n input ENTER to exit")
+    is_stop = True
+
+    for tcp_client in tcp_clients:
+        tcp_client.stop()
+
+    for pose_parse_instance in pose_parse_instances:
+        pose_parse_instance.stop()
 
 
 ages = {}  # 老人字典
 rooms = {}  # 本服务器监控的房间字典
 cameras = {}  # 摄像头字典
+tcp_clients=[]
+pose_parse_instances=[]
 # 获取或设置本机IP地址信息
 local_ip = '192.168.1.60'
 tcp_server_ip = '127.0.0.1'
 tcp_server_port = 8008
+is_stop = False
 
 print(f"Torch device: {torch.cuda.get_device_name()}")
 
@@ -292,13 +308,16 @@ if __name__=="__main__":
     # 定时调度来更新数据库
     scheduler = sched.scheduler(time.time, time.sleep)
     scheduler.enter(1, 0, write_database, ())
+    scheduler.enter(10, 1, wait_for_stop_cmd, ())
 
     for camera in current_server.cameraInfos:  # 遍历本服务器需要处理的摄像头
         temp_tcp_client = tcpClient.TcpClient(tcp_server_ip, tcp_server_port, camera.id, camera.roomInfoId)
         temp_tcp_client.start()
+        tcp_clients.append(temp_tcp_client)
 
         temp_ai_instance = ParsePoseCore(camera,model,body_estimation,temp_tcp_client)
         temp_ai_instance.start()
+        pose_parse_instances.append(temp_ai_instance)
 
         rooms[camera.roomInfoId] = RoomInfo(id=camera.roomInfo.id,
                                             name=camera.roomInfo.name,
