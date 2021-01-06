@@ -104,4 +104,5 @@ class TcpClient:
                 print(f'{get_time_now()} close last socket with exception')
             self.reconnection()
         else:
+            self.tcp_socket.send(struct.pack('<BIB', 4, 1, 2))
             self.tcp_socket.close()
