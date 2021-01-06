@@ -93,7 +93,7 @@ def aged_status_sync(aged):
     aged.timeother = aged_status_today.timeOther
 
 
-def pose_detect_with_video(aged_id,classidx,human_box,parse_pose_demo_instance):
+def pose_detect_with_video(aged_id, classidx, human_box, parse_pose_demo_instance):
     use_aged = ages[aged_id]
     # detect if new day
     now_date = time.strftime('%Y-%m-%dT00:00:00', time.localtime())
@@ -144,8 +144,8 @@ def pose_detect_with_video(aged_id,classidx,human_box,parse_pose_demo_instance):
     if parse_pose_demo_instance.camera.isUseSafeRegion:
         is_outer_chuang = False  # 临时变量，指示是否在安全区外
         #  因为床的矩形坐标是在原图压缩1/2之后的值，所以下面的值也需要压缩1/2
-        xmin, ymin, xmax, ymax = int(human_box[0] ), int(human_box[1] ), int(human_box[2] ), int(
-            human_box[3] )
+        xmin, ymin, xmax, ymax = int(human_box[0]), int(human_box[1]), int(human_box[2]), int(
+            human_box[3])
         if xmin > parse_pose_demo_instance.camera.rightBottomPointX \
                 or ymin > parse_pose_demo_instance.camera.rightBottomPointY \
                 or xmax < parse_pose_demo_instance.camera.leftTopPointX \
@@ -201,16 +201,16 @@ class ParsePoseCore:
                 if frame_num < 2:
                     frame_num += 1
                 else:
-                    frame_num=0
-                    h,w,c = frame.shape
+                    frame_num = 0
+                    h, w, c = frame.shape
                     # 将原图片尺寸压缩，宽高都压缩到原来的1/2.
                     oriImg = cv2.resize(frame, (int(w / 2), int(h / 2)), interpolation=cv2.INTER_CUBIC)
                     corrs, subset = self.use_body_estimation(oriImg)
-                    if corrs.any() or not subset.shape[0] ==0:
+                    if corrs.any() or not subset.shape[0] == 0:
                         subset_vis = subset.copy()
                         oriImg = util.draw_bodypose(oriImg, corrs, subset_vis)
                         if self.tcp_client.is_room_video_send:
-                            #oriImg = cv2.resize(frame, (int(w / 2), int(h / 2)), interpolation=cv2.INTER_CUBIC)
+                            # oriImg = cv2.resize(frame, (int(w / 2), int(h / 2)), interpolation=cv2.INTER_CUBIC)
                             self.tcp_client.send_img(oriImg)
                             print(f'{get_time_now()} send img')
                         corrs = prepare_posreg_multiperson(corrs, subset)
@@ -220,16 +220,19 @@ class ParsePoseCore:
                         for aged in self.camera.roomInfo.agesInfos:
                             if not aged.id in ages.keys():
                                 ages[aged.id] = PoseInfo(agesInfoId=aged.id,
-                                                                 date=time.strftime('%Y-%m-%dT00:00:00', time.localtime()),
-                                                                 dateTime=time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()),
-                                                                 timeStand=0,
-                                                                 timeSit=0,
-                                                                 timeLie=0,
-                                                                 timeDown=0,
-                                                                 timeOther=0)
+                                                         date=time.strftime('%Y-%m-%dT00:00:00', time.localtime()),
+                                                         dateTime=time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()),
+                                                         timeStand=0,
+                                                         timeSit=0,
+                                                         timeLie=0,
+                                                         timeDown=0,
+                                                         timeOther=0)
                         for i in range(corrs.shape[0]):
-                            xmin, ymin, xmax, ymax = np.min(corrs[i, :, 0]), np.min(corrs[i, :, 1]), np.max(corrs[i,:,0]), np.max(corrs[i,:,1])
-                            pose_detect_with_video(self.camera.roomInfo.agesInfos[i].id,preds[i],(xmin,ymin,xmax,ymax),self)
+                            if i <= len(self.camera.roomInfo.agesInfos - 1):
+                                xmin, ymin, xmax, ymax = np.min(corrs[i, :, 0]), np.min(corrs[i, :, 1]), np.max(
+                                    corrs[i, :, 0]), np.max(corrs[i, :, 1])
+                                pose_detect_with_video(self.camera.roomInfo.agesInfos[i].id, preds[i],
+                                                       (xmin, ymin, xmax, ymax), self)
             else:
                 #  reconnect the video stream
                 self.stream = cv2.VideoCapture(self.camera.videoAddress)
@@ -283,8 +286,8 @@ def wait_for_stop_cmd():
 ages = {}  # 老人字典
 rooms = {}  # 本服务器监控的房间字典
 cameras = {}  # 摄像头字典
-tcp_clients=[]
-pose_parse_instances=[]
+tcp_clients = []
+pose_parse_instances = []
 # 获取或设置本机IP地址信息
 local_ip = '192.168.1.60'
 tcp_server_ip = '127.0.0.1'
@@ -293,7 +296,7 @@ is_stop = False
 
 print(f"Torch device: {torch.cuda.get_device_name()}")
 
-if __name__=="__main__":
+if __name__ == "__main__":
     model = NeuralNet(18 * 3).cuda()
     model.load_state_dict(torch.load('./49_model.ckpt'))
     body_estimation = Body('model/body_pose_model.pth')
@@ -302,20 +305,20 @@ if __name__=="__main__":
     current_server_url = Conf.Urls.ServerInfoUrl + "/GetServerInfo?ip=" + local_ip
     print(f'get {current_server_url}')
 
-    current_server =HttpHelper.get_items(current_server_url)
+    current_server = HttpHelper.get_items(current_server_url)
     print(f'current_server.camera_count: {len(current_server.cameraInfos)}')
 
     # 定时调度来更新数据库
     scheduler = sched.scheduler(time.time, time.sleep)
     scheduler.enter(1, 0, write_database, ())
-    scheduler.enter(10, 1, wait_for_stop_cmd, ())
+    scheduler.enter(7, 1, wait_for_stop_cmd, ())
 
     for camera in current_server.cameraInfos:  # 遍历本服务器需要处理的摄像头
         temp_tcp_client = tcpClient.TcpClient(tcp_server_ip, tcp_server_port, camera.id, camera.roomInfoId)
         temp_tcp_client.start()
         tcp_clients.append(temp_tcp_client)
 
-        temp_ai_instance = ParsePoseCore(camera,model,body_estimation,temp_tcp_client)
+        temp_ai_instance = ParsePoseCore(camera, model, body_estimation, temp_tcp_client)
         temp_ai_instance.start()
         pose_parse_instances.append(temp_ai_instance)
 
@@ -325,50 +328,3 @@ if __name__=="__main__":
                                             roomSize=camera.roomInfo.roomSize)
 
     scheduler.run()
-
-# # cap = cv2.VideoCapture(0)
-# cap = cv2.VideoCapture('')
-# # cap.set(3, 400)
-# # cap.set(4, 300)
-# j = 0
-#
-# ims_path = '.\\test_data\\test'
-# ims_path_lst = glob(ims_path + '\\*.jpg')
-# # while True:
-# for im_path in ims_path_lst:
-#     j += 1
-#     try:
-#         oriImg = cv2.imread(im_path)
-#         st = time.time()
-#         # oriImg = cv2.resize(oriImg,(240,120),interpolation=cv2.INTER_CUBIC)
-#         corrs, subset = body_estimation(oriImg)
-#         subset_vis = subset.copy()
-#         oriImg = util.draw_bodypose(oriImg, corrs, subset_vis)
-#         corrs = prepare_posreg_multiperson(corrs, subset)
-#         preds = reg_infer(corrs)
-#         preds = preds.cpu().numpy()
-#
-#         for i in range(corrs.shape[0]):
-#             xmin, ymin = np.min(corrs[i, :, 0]), np.min(corrs[i, :, 1])
-#             if preds[i] == 0:
-#                 cv2.putText(oriImg, 'zuo', (int(xmin - 10), int(ymin - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.7,
-#                             [255, 0, 255], 1)
-#             if preds[i] == 1:
-#                 cv2.putText(oriImg, 'tang', (int(xmin - 10), int(ymin - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.7,
-#                             [255, 0, 255], 1)
-#             if preds[i] == 2:
-#                 cv2.putText(oriImg, 'zhan', (int(xmin - 10), int(ymin - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.7,
-#                             [255, 0, 255], 1)
-#             if preds[i] == 3:
-#                 cv2.putText(oriImg, 'zuo_di', (int(xmin - 10), int(ymin - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.7,
-#                             [255, 0, 255], 1)
-#             # print(i, preds)
-#             # print(time.time()-st)
-#         cv2.imwrite('.\\test_data\\re\\' + str(j).zfill(4) + '.jpg', oriImg)
-#         # cv2.imshow('demo', oriImg)
-#         # cv2.waitKey()
-#     except:
-#         continue
-#
-# cap.release()
-# cv2.destroyAllWindows()
