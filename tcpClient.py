@@ -107,7 +107,8 @@ class TcpClient:
                 self.tcp_socket.close()
             except ConnectionError:
                 print(f'{get_time_now()} close last socket with exception')
-            self.reconnection()
+            if not self.is_stop:
+                self.reconnection()
         else:
             self.tcp_socket.send(struct.pack('<BIB', 4, 1, 2))
             self.tcp_socket.close()
