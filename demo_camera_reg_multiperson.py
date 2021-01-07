@@ -235,6 +235,8 @@ class ParsePoseCore:
                                         corrs[i, :, 0]), np.max(corrs[i, :, 1])
                                     aged = ages[self.camera.roomInfo.agesInfos[i].id]
                                     aged.last_position = ymax
+                            else:
+                                continue
 
                         for i in range(corrs.shape[0]):
                             if i <= len(self.camera.roomInfo.agesInfos)-1:  # 避免人的列表溢出
