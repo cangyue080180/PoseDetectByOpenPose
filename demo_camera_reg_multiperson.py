@@ -228,7 +228,7 @@ class ParsePoseCore:
                                                          timeDown=0,
                                                          timeOther=0)
                         for i in range(corrs.shape[0]):
-                            if i <= len(self.camera.roomInfo.agesInfos - 1):
+                            if i <= len(self.camera.roomInfo.agesInfos)-1:
                                 xmin, ymin, xmax, ymax = np.min(corrs[i, :, 0]), np.min(corrs[i, :, 1]), np.max(
                                     corrs[i, :, 0]), np.max(corrs[i, :, 1])
                                 pose_detect_with_video(self.camera.roomInfo.agesInfos[i].id, preds[i],
