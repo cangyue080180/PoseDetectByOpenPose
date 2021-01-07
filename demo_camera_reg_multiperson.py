@@ -99,13 +99,13 @@ def pose_detect_with_video(aged_id, classidx, human_box, parse_pose_demo_instanc
     now_date = time.strftime('%Y-%m-%dT00:00:00', time.localtime())
     if not now_date == use_aged.date:  # a new day
         aged_status_reset(use_aged)
-        parse_pose_demo_instance.is_first_frame = True
+        use_aged.is_first_frame = True
         use_aged.date = now_date
 
-    if parse_pose_demo_instance.is_first_frame:  # 第一帧，开始计时
+    if use_aged.is_first_frame:  # 第一帧，开始计时
         # 从服务器获取当天的状态记录信息，进行本地值的更新，防止状态计时被重置
         aged_status_sync(use_aged)
-        parse_pose_demo_instance.is_first_frame = False
+        use_aged.is_first_frame = False
     else:
         last_pose_time = time.time() - parse_pose_demo_instance.last_time  # 上一个状态至今的时间差，单位为s
         if use_aged.status == PoseStatus.Sit.value:
@@ -227,11 +227,28 @@ class ParsePoseCore:
                                                          timeLie=0,
                                                          timeDown=0,
                                                          timeOther=0)
+                        if self.is_first_frame:
+                            if len(corrs.shape[0]) == len(self.camera.roomInfo.agesInfos):
+                                self.is_first_frame = False
+                                for i in range(corrs.shape[0]):
+                                    xmin, ymin, xmax, ymax = np.min(corrs[i, :, 0]), np.min(corrs[i, :, 1]), np.max(
+                                        corrs[i, :, 0]), np.max(corrs[i, :, 1])
+                                    aged = ages[self.camera.roomInfo.agesInfos[i].id]
+                                    aged.last_position = ymax
+
                         for i in range(corrs.shape[0]):
-                            if i <= len(self.camera.roomInfo.agesInfos)-1:
+                            if i <= len(self.camera.roomInfo.agesInfos)-1:  # 避免人的列表溢出
                                 xmin, ymin, xmax, ymax = np.min(corrs[i, :, 0]), np.min(corrs[i, :, 1]), np.max(
                                     corrs[i, :, 0]), np.max(corrs[i, :, 1])
-                                pose_detect_with_video(self.camera.roomInfo.agesInfos[i].id, preds[i],
+
+                                # 比较最小偏移来进行人的简单跟踪
+                                min_aged_offset = ymax - ages[self.camera.roomInfo.agesInfos[0].id].last_position
+                                min_aged_id = self.camera.roomInfo.agesInfos[0].id
+                                for aged in self.camera.roomInfo.agesInfos:
+                                    if ymax - aged.last_position < min_aged_offset:
+                                        min_aged_offset = ymax-aged.last_position
+                                        min_aged_id = aged.id
+                                pose_detect_with_video(min_aged_id, preds[i],
                                                        (xmin, ymin, xmax, ymax), self)
             else:
                 #  reconnect the video stream
