@@ -37,7 +37,7 @@ class CameraInfo:
 
 
 class PoseInfo:
-    def __init__(self, agesInfoId, date, dateTime, timeStand=0, timeSit=0, timeLie=0, timeDown=0, timeOther=0, last_position=0, is_first_frame=True, timeIn=None, isAlarm=False,
+    def __init__(self, agesInfoId, date, dateTime, timeStand=0, timeSit=0, timeLie=0, timeDown=0, timeOther=0,last_time=0, last_position=0, is_first_frame=True, timeIn=None, isAlarm=False,
                  status=None, agesInfo=None):
         self.agesinfoid = agesInfoId
         self.agesinfo = agesInfo
@@ -48,6 +48,7 @@ class PoseInfo:
         self.timelie = timeLie
         self.timedown = timeDown
         self.timeother = timeOther
+        self.last_time = last_time
         self.last_position = last_position
         self.is_first_frame = is_first_frame
         self.timein = timeIn

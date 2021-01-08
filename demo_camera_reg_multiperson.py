@@ -107,7 +107,7 @@ def pose_detect_with_video(aged_id, classidx, human_box, parse_pose_demo_instanc
         aged_status_sync(use_aged)
         use_aged.is_first_frame = False
     else:
-        last_pose_time = time.time() - parse_pose_demo_instance.last_time  # 上一个状态至今的时间差，单位为s
+        last_pose_time = time.time() - use_aged.last_time  # 上一个状态至今的时间差，单位为s
         if use_aged.status == PoseStatus.Sit.value:
             use_aged.timesit += last_pose_time
         elif use_aged.status == PoseStatus.Down.value:
@@ -119,7 +119,7 @@ def pose_detect_with_video(aged_id, classidx, human_box, parse_pose_demo_instanc
         else:
             use_aged.timeother += last_pose_time
 
-    parse_pose_demo_instance.last_time = time.time()
+    use_aged.last_time = time.time()
 
     if classidx == 0:
         now_status = PoseStatus.Sit.value
@@ -176,7 +176,6 @@ class ParsePoseCore:
         self.is_stop = True
         self.stream = None
         self.is_first_frame = True
-        self.last_time = 0
 
     def start(self):
         self.is_stop = False
@@ -212,8 +211,11 @@ class ParsePoseCore:
                         if self.tcp_client.is_room_video_send:
                             # oriImg = cv2.resize(frame, (int(w / 2), int(h / 2)), interpolation=cv2.INTER_CUBIC)
                             self.tcp_client.send_img(oriImg)
-                            print(f'{get_time_now()} send img')
-                        corrs = prepare_posreg_multiperson(corrs, subset)
+                            # print(f'{get_time_now()} send img')
+                        try:
+                            corrs = prepare_posreg_multiperson(corrs, subset)
+                        except Exception:
+                            continue
                         preds = reg_infer(corrs)
                         preds = preds.cpu().numpy()
 
@@ -226,9 +228,11 @@ class ParsePoseCore:
                                                          timeSit=0,
                                                          timeLie=0,
                                                          timeDown=0,
-                                                         timeOther=0)
+                                                         timeOther=0,
+                                                         last_position=0
+                                                         )
                         if self.is_first_frame:
-                            if len(corrs.shape[0]) == len(self.camera.roomInfo.agesInfos):
+                            if corrs.shape[0] == len(self.camera.roomInfo.agesInfos):
                                 self.is_first_frame = False
                                 for i in range(corrs.shape[0]):
                                     xmin, ymin, xmax, ymax = np.min(corrs[i, :, 0]), np.min(corrs[i, :, 1]), np.max(
@@ -244,11 +248,12 @@ class ParsePoseCore:
                                     corrs[i, :, 0]), np.max(corrs[i, :, 1])
 
                                 # 比较最小偏移来进行人的简单跟踪
-                                min_aged_offset = ymax - ages[self.camera.roomInfo.agesInfos[0].id].last_position
+                                min_aged_offset = abs(ymax - ages[self.camera.roomInfo.agesInfos[0].id].last_position)
                                 min_aged_id = self.camera.roomInfo.agesInfos[0].id
                                 for aged in self.camera.roomInfo.agesInfos:
-                                    if ymax - aged.last_position < min_aged_offset:
-                                        min_aged_offset = ymax-aged.last_position
+                                    poseinfo = ages[aged.id]
+                                    if abs(ymax - poseinfo.last_position) < min_aged_offset:
+                                        min_aged_offset = abs(poseinfo-aged.last_position)
                                         min_aged_id = aged.id
                                 pose_detect_with_video(min_aged_id, preds[i],
                                                        (xmin, ymin, xmax, ymax), self)
