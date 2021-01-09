@@ -189,68 +189,74 @@ class ParsePoseCore:
         self.is_stop = True
 
     def parse(self):
+        frame_num = 0
         while not self.is_stop:
             (grabbed, frame) = self.stream.read()
             # if the `grabbed` boolean is `False`, then we have
             # reached the end of the video file or we disconnect
 
             if grabbed:
-                h, w, c = frame.shape
-                # 将原图片尺寸压缩，宽高都压缩到原来的1/2.
-                oriImg = cv2.resize(frame, (int(w / 2), int(h / 2)), interpolation=cv2.INTER_CUBIC)
-                corrs, subset = self.use_body_estimation(oriImg)
-                if corrs.any() or not subset.shape[0] == 0:
-                    subset_vis = subset.copy()
-                    oriImg = util.draw_bodypose(oriImg, corrs, subset_vis)
-                    if self.tcp_client.is_room_video_send:
-                        # oriImg = cv2.resize(frame, (int(w / 2), int(h / 2)), interpolation=cv2.INTER_CUBIC)
-                        self.tcp_client.send_img(oriImg)
-                        # print(f'{get_time_now()} send img')
-                    try:
-                        corrs = prepare_posreg_multiperson(corrs, subset)
-                    except Exception:
-                        continue
-                    preds = reg_infer(corrs)
-                    preds = preds.cpu().numpy()
+                #  because it is so slow to detect, so detect once each 20 frames
+                if frame_num < 2:
+                    frame_num += 1
+                else:
+                    frame_num = 0
+                    h, w, c = frame.shape
+                    # 将原图片尺寸压缩，宽高都压缩到原来的1/2.
+                    oriImg = cv2.resize(frame, (int(w / 2), int(h / 2)), interpolation=cv2.INTER_CUBIC)
+                    corrs, subset = self.use_body_estimation(oriImg)
+                    if corrs.any() or not subset.shape[0] == 0:
+                        subset_vis = subset.copy()
+                        oriImg = util.draw_bodypose(oriImg, corrs, subset_vis)
+                        if self.tcp_client.is_room_video_send:
+                            # oriImg = cv2.resize(frame, (int(w / 2), int(h / 2)), interpolation=cv2.INTER_CUBIC)
+                            self.tcp_client.send_img(oriImg)
+                            # print(f'{get_time_now()} send img')
+                        try:
+                            corrs = prepare_posreg_multiperson(corrs, subset)
+                        except Exception:
+                            continue
+                        preds = reg_infer(corrs)
+                        preds = preds.cpu().numpy()
 
-                    for aged in self.camera.roomInfo.agesInfos:
-                        if not aged.id in ages.keys():
-                            ages[aged.id] = PoseInfo(agesInfoId=aged.id,
-                                                     date=time.strftime('%Y-%m-%dT00:00:00', time.localtime()),
-                                                     dateTime=time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()),
-                                                     timeStand=0,
-                                                     timeSit=0,
-                                                     timeLie=0,
-                                                     timeDown=0,
-                                                     timeOther=0,
-                                                     last_position=0
-                                                     )
-                    if self.is_first_frame:
-                        if corrs.shape[0] == len(self.camera.roomInfo.agesInfos):
-                            self.is_first_frame = False
-                            for i in range(corrs.shape[0]):
+                        for aged in self.camera.roomInfo.agesInfos:
+                            if not aged.id in ages.keys():
+                                ages[aged.id] = PoseInfo(agesInfoId=aged.id,
+                                                         date=time.strftime('%Y-%m-%dT00:00:00', time.localtime()),
+                                                         dateTime=time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()),
+                                                         timeStand=0,
+                                                         timeSit=0,
+                                                         timeLie=0,
+                                                         timeDown=0,
+                                                         timeOther=0,
+                                                         last_position=0
+                                                         )
+                        if self.is_first_frame:
+                            if corrs.shape[0] == len(self.camera.roomInfo.agesInfos):
+                                self.is_first_frame = False
+                                for i in range(corrs.shape[0]):
+                                    xmin, ymin, xmax, ymax = np.min(corrs[i, :, 0]), np.min(corrs[i, :, 1]), np.max(
+                                        corrs[i, :, 0]), np.max(corrs[i, :, 1])
+                                    aged = ages[self.camera.roomInfo.agesInfos[i].id]
+                                    aged.last_position = ymax
+                            else:
+                                continue
+
+                        for i in range(corrs.shape[0]):
+                            if i <= len(self.camera.roomInfo.agesInfos) - 1:  # 避免人的列表溢出
                                 xmin, ymin, xmax, ymax = np.min(corrs[i, :, 0]), np.min(corrs[i, :, 1]), np.max(
                                     corrs[i, :, 0]), np.max(corrs[i, :, 1])
-                                aged = ages[self.camera.roomInfo.agesInfos[i].id]
-                                aged.last_position = ymax
-                        else:
-                            continue
 
-                    for i in range(corrs.shape[0]):
-                        if i <= len(self.camera.roomInfo.agesInfos)-1:  # 避免人的列表溢出
-                            xmin, ymin, xmax, ymax = np.min(corrs[i, :, 0]), np.min(corrs[i, :, 1]), np.max(
-                                corrs[i, :, 0]), np.max(corrs[i, :, 1])
-
-                            # 比较最小偏移来进行人的简单跟踪
-                            min_aged_offset = abs(ymax - ages[self.camera.roomInfo.agesInfos[0].id].last_position)
-                            min_aged_id = self.camera.roomInfo.agesInfos[0].id
-                            for aged in self.camera.roomInfo.agesInfos:
-                                poseinfo = ages[aged.id]
-                                if abs(ymax - poseinfo.last_position) < min_aged_offset:
-                                    min_aged_offset = abs(ymax-poseinfo.last_position)
-                                    min_aged_id = aged.id
-                            pose_detect_with_video(min_aged_id, preds[i],
-                                                   (xmin, ymin, xmax, ymax), self)
+                                # 比较最小偏移来进行人的简单跟踪
+                                min_aged_offset = abs(ymax - ages[self.camera.roomInfo.agesInfos[0].id].last_position)
+                                min_aged_id = self.camera.roomInfo.agesInfos[0].id
+                                for aged in self.camera.roomInfo.agesInfos:
+                                    poseinfo = ages[aged.id]
+                                    if abs(ymax - poseinfo.last_position) < min_aged_offset:
+                                        min_aged_offset = abs(ymax - poseinfo.last_position)
+                                        min_aged_id = aged.id
+                                pose_detect_with_video(min_aged_id, preds[i],
+                                                       (xmin, ymin, xmax, ymax), self)
             else:
                 #  reconnect the video stream
                 self.stream = cv2.VideoCapture(self.camera.videoAddress)
@@ -339,7 +345,7 @@ if __name__ == "__main__":
                                             name=camera.roomInfo.name,
                                             isAlarm=camera.roomInfo.isAlarm,
                                             roomSize=camera.roomInfo.roomSize)
-    
+
     # 定时调度来更新数据库
     t = threading.Thread(target=write_database, args=())
     t.daemon = True
