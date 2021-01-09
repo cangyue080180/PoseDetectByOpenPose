@@ -332,14 +332,6 @@ if __name__ == "__main__":
     current_server = HttpHelper.get_items(current_server_url)
     print(f'current_server.camera_count: {len(current_server.cameraInfos)}')
 
-    # 定时调度来更新数据库
-    t = threading.Thread(target=write_database, args=())
-    t.daemon = True
-    t.start()
-
-    scheduler = sched.scheduler(time.time, time.sleep)
-    scheduler.enter(7, 1, wait_for_stop_cmd, ())
-    scheduler.run()
 
     for camera in current_server.cameraInfos:  # 遍历本服务器需要处理的摄像头
         temp_tcp_client = tcpClient.TcpClient(tcp_server_ip, tcp_server_port, camera.id, camera.roomInfoId)
@@ -354,3 +346,10 @@ if __name__ == "__main__":
                                             name=camera.roomInfo.name,
                                             isAlarm=camera.roomInfo.isAlarm,
                                             roomSize=camera.roomInfo.roomSize)
+    
+    # 定时调度来更新数据库
+    t = threading.Thread(target=write_database, args=())
+    t.daemon = True
+    t.start()
+
+    wait_for_stop_cmd()
