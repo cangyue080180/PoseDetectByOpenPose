@@ -253,7 +253,7 @@ class ParsePoseCore:
                                 for aged in self.camera.roomInfo.agesInfos:
                                     poseinfo = ages[aged.id]
                                     if abs(ymax - poseinfo.last_position) < min_aged_offset:
-                                        min_aged_offset = abs(poseinfo-aged.last_position)
+                                        min_aged_offset = abs(ymax-poseinfo.last_position)
                                         min_aged_id = aged.id
                                 pose_detect_with_video(min_aged_id, preds[i],
                                                        (xmin, ymin, xmax, ymax), self)
