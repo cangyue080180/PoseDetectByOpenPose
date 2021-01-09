@@ -270,29 +270,29 @@ def write_database():
     每1秒更新一次数据库表PoseInfo的记录信息
     :return:
     """
-    pose_url = Conf.Urls.PoseInfoUrl + '/UpdateOrCreatePoseInfo'
+    while not is_stop:
+        pose_url = Conf.Urls.PoseInfoUrl + '/UpdateOrCreatePoseInfo'
 
-    for aged in ages.values():
-        temp_pose_info = PoseInfo(agesInfoId=aged.agesinfoid,
-                                  date=aged.date,
-                                  dateTime=aged.datetime,
-                                  timeStand=int(float(aged.timestand)),
-                                  timeSit=int(float(aged.timesit)),
-                                  timeLie=int(float(aged.timelie)),
-                                  timeDown=int(float(aged.timedown)),
-                                  timeOther=int(float(aged.timeother)),
-                                  isAlarm=aged.isalarm,
-                                  status=aged.status
-                                  )
-        http_result = HttpHelper.create_item(pose_url, temp_pose_info)
+        for aged in ages.values():
+            temp_pose_info = PoseInfo(agesInfoId=aged.agesinfoid,
+                                      date=aged.date,
+                                      dateTime=aged.datetime,
+                                      timeStand=int(float(aged.timestand)),
+                                      timeSit=int(float(aged.timesit)),
+                                      timeLie=int(float(aged.timelie)),
+                                      timeDown=int(float(aged.timedown)),
+                                      timeOther=int(float(aged.timeother)),
+                                      isAlarm=aged.isalarm,
+                                      status=aged.status
+                                      )
+            http_result = HttpHelper.create_item(pose_url, temp_pose_info)
 
-    # 更新房间状态信息
-    room_url = Conf.Urls.RoomInfoUrl
-    for room in rooms.values():
-        HttpHelper.update_item(room_url, room.id, room)
+        # 更新房间状态信息
+        room_url = Conf.Urls.RoomInfoUrl
+        for room in rooms.values():
+            HttpHelper.update_item(room_url, room.id, room)
 
-    if not is_stop:
-        scheduler.enter(1, 0, write_database, ())
+        time.sleep(1)
 
 
 def wait_for_stop_cmd():
@@ -333,9 +333,13 @@ if __name__ == "__main__":
     print(f'current_server.camera_count: {len(current_server.cameraInfos)}')
 
     # 定时调度来更新数据库
+    t = threading.Thread(target=write_database, args=())
+    t.daemon = True
+    t.start()
+
     scheduler = sched.scheduler(time.time, time.sleep)
-    scheduler.enter(1, 0, write_database, ())
     scheduler.enter(7, 1, wait_for_stop_cmd, ())
+    scheduler.run()
 
     for camera in current_server.cameraInfos:  # 遍历本服务器需要处理的摄像头
         temp_tcp_client = tcpClient.TcpClient(tcp_server_ip, tcp_server_port, camera.id, camera.roomInfoId)
@@ -350,5 +354,3 @@ if __name__ == "__main__":
                                             name=camera.roomInfo.name,
                                             isAlarm=camera.roomInfo.isAlarm,
                                             roomSize=camera.roomInfo.roomSize)
-
-    scheduler.run()
