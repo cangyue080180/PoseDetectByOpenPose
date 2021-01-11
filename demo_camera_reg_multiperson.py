@@ -143,9 +143,17 @@ def pose_detect_with_video(aged_id, classidx, human_box, parse_pose_demo_instanc
 
     if parse_pose_demo_instance.camera.isUseSafeRegion:
         is_outer_chuang = False  # 临时变量，指示是否在安全区外
+        is_outer_chair = False # 临时变量，指示是否在椅子安全区外
         #  因为床的矩形坐标是在原图压缩1/2之后的值，所以下面的值也需要压缩1/2
         xmin, ymin, xmax, ymax = int(human_box[0]), int(human_box[1]), int(human_box[2]), int(
             human_box[3])
+
+        if xmin > 352\
+            or ymin > 266 \
+            or xmax < 298 \
+            or ymax < 220:
+            is_outer_chair = True
+
         if xmin > parse_pose_demo_instance.camera.rightBottomPointX \
                 or ymin > parse_pose_demo_instance.camera.rightBottomPointY \
                 or xmax < parse_pose_demo_instance.camera.leftTopPointX \
@@ -155,7 +163,7 @@ def pose_detect_with_video(aged_id, classidx, human_box, parse_pose_demo_instanc
         use_aged.isalarm = False
         rooms[parse_pose_demo_instance.camera.roomInfoId].isalarm = False
         # 判断当前状态是否需求报警
-        if is_outer_chuang:
+        if is_outer_chuang and is_outer_chair:
             if now_status == PoseStatus.Lie.value:
                 use_aged.isalarm = True
                 rooms[parse_pose_demo_instance.camera.roomInfoId].isalarm = True
