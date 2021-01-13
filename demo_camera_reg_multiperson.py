@@ -147,26 +147,28 @@ def pose_detect_with_video(aged_id, classidx, human_box, parse_pose_demo_instanc
         #  因为床的矩形坐标是在原图压缩1/2之后的值，所以下面的值也需要压缩1/2
         xmin, ymin, xmax, ymax = int(human_box[0]), int(human_box[1]), int(human_box[2]), int(
             human_box[3])
+        x_core = int(xmin+(xmax-xmin)/2)
+        y_core = int(ymin+(ymax-ymin)/2)
 
-        if xmin > 352\
-            or ymin > 266 \
-            or xmax < 298 \
-            or ymax < 220:
+        if x_core > 472\
+            or y_core > 270 \
+            or x_core < 288 \
+            or y_core < 184:
             is_outer_chair = True
 
-        if xmin > parse_pose_demo_instance.camera.rightBottomPointX \
-                or ymin > parse_pose_demo_instance.camera.rightBottomPointY \
-                or xmax < parse_pose_demo_instance.camera.leftTopPointX \
-                or ymax < parse_pose_demo_instance.camera.leftTopPointY:
+        if x_core > parse_pose_demo_instance.camera.rightBottomPointX \
+                or y_core > parse_pose_demo_instance.camera.rightBottomPointY \
+                or x_core < parse_pose_demo_instance.camera.leftTopPointX \
+                or y_core < parse_pose_demo_instance.camera.leftTopPointY:
             is_outer_chuang = True
 
         use_aged.isalarm = False
-        rooms[parse_pose_demo_instance.camera.roomInfoId].isalarm = False
+        #rooms[parse_pose_demo_instance.camera.roomInfoId].isalarm = False
         # 判断当前状态是否需求报警
         if is_outer_chuang and is_outer_chair:
             if now_status == PoseStatus.Lie.value:
                 use_aged.isalarm = True
-                rooms[parse_pose_demo_instance.camera.roomInfoId].isalarm = True
+                #rooms[parse_pose_demo_instance.camera.roomInfoId].isalarm = True
                 now_status = PoseStatus.Down.value
     else:
         if now_status == PoseStatus.Down.value:  # TODO：这里的给值是不对的，需要赋予识别服务的对应的需要报警的状态值
@@ -297,8 +299,23 @@ def write_database():
 
         # 更新房间状态信息
         room_url = Conf.Urls.RoomInfoUrl
+        
+        for camera in current_server.cameraInfos:  # 遍历本服务器需要处理的摄像头
+            temp_room_isalarm = False
+            for aged in camera.roomInfo.agesInfos:
+                if not aged.id in ages.keys():
+                    break
+                poseinfo = ages[aged.id]
+                if poseinfo.isalarm:
+                    temp_room_isalarm = True
+                    break
+            if temp_room_isalarm:
+                rooms[camera.roomInfoId].isalarm = True
+            else:
+                rooms[camera.roomInfoId].isalarm = False
+            
         for room in rooms.values():
-            HttpHelper.update_item(room_url, room.id, room)
+            result= HttpHelper.update_item_post(room_url, room.id, room)
 
         time.sleep(1)
 
